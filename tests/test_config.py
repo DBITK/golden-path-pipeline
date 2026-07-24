@@ -131,6 +131,35 @@ class TestValidation:
         with pytest.raises(ConfigError, match=r"\[0, 1\]"):
             load(write(tmp_path, text))
 
+    def test_significance_at_boundary_is_rejected(self, tmp_path):
+        for bad in (0.0, 1.0):
+            text = (
+                MINIMAL
+                + f"""
+    verification:
+      - type: canary
+        metrics:
+          - name: error_rate_pct
+            significance: {bad}
+"""
+            )
+            with pytest.raises(ConfigError, match="significance"):
+                load(write(tmp_path, text))
+
+    def test_min_samples_zero_is_rejected(self, tmp_path):
+        text = (
+            MINIMAL
+            + """
+    verification:
+      - type: canary
+        metrics:
+          - name: error_rate_pct
+            minSamples: 0
+"""
+        )
+        with pytest.raises(ConfigError, match="minSamples"):
+            load(write(tmp_path, text))
+
     def test_canary_without_metrics_is_rejected(self, tmp_path):
         text = (
             MINIMAL
