@@ -12,7 +12,7 @@ Most "CI/CD portfolio projects" are a `deploy.sh` behind a green checkmark. This
 
 | | |
 |---|---|
-| **[Interactive canary simulator →](../../deployments/github-pages)** | Move sliders, watch the real judge accept or reject the build in your browser. |
+| **[Interactive canary simulator →](http://derekbartlett.com/golden-path-pipeline/)** | Move sliders, watch the real judge accept or reject the build in your browser. |
 | **[Run the pipeline yourself →](../../actions/workflows/golden-path.yml)** | Actions → *Run workflow* → choose an error rate and latency. Ship a bad build on purpose and watch it get rejected. |
 | **[Gate Drill →](../../actions/workflows/gate-drill.yml)** | A weekly job that deliberately ships broken builds and **fails if they get promoted**. |
 
