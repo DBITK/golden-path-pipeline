@@ -226,6 +226,12 @@ def _parse_metric(raw: dict, env_name: str, index: int) -> MetricSpec:
     weight = float(raw.get("weight", 1.0))
     if weight <= 0:
         raise ConfigError(f"{where}: weight must be positive")
+    significance = float(raw.get("significance", 0.05))
+    if not 0.0 < significance < 1.0:
+        raise ConfigError(f"{where}: significance must fall within (0, 1), got {significance}")
+    min_samples = int(raw.get("minSamples", 20))
+    if min_samples < 1:
+        raise ConfigError(f"{where}: minSamples must be at least 1, got {min_samples}")
 
     return MetricSpec(
         name=str(raw["name"]),
@@ -233,8 +239,8 @@ def _parse_metric(raw: dict, env_name: str, index: int) -> MetricSpec:
         weight=weight,
         critical=bool(raw.get("critical", False)),
         tolerance=tolerance,
-        significance=float(raw.get("significance", 0.05)),
-        min_samples=int(raw.get("minSamples", 20)),
+        significance=significance,
+        min_samples=min_samples,
     )
 
 
