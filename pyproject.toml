@@ -1,0 +1,50 @@
+[build-system]
+requires = ["setuptools>=68"]
+build-backend = "setuptools.build_meta"
+
+[project]
+name = "goldenpath"
+version = "1.0.0"
+description = "Declarative golden-path deployment with Kayenta-style automated canary analysis."
+readme = "README.md"
+requires-python = ">=3.11"
+license = { text = "MIT" }
+# PyYAML is the only runtime dependency. The statistics, the executor, the
+# router and the judge are all standard library, so the code that decides
+# whether production traffic moves can be read end to end without leaving
+# this repository.
+dependencies = ["PyYAML>=6.0"]
+
+[project.optional-dependencies]
+dev = ["pytest>=8.0", "ruff>=0.6"]
+
+[project.scripts]
+goldenpath = "goldenpath.cli:main"
+
+[tool.setuptools.packages.find]
+include = ["goldenpath*"]
+
+[tool.pytest.ini_options]
+testpaths = ["tests"]
+addopts = "-q"
+
+[tool.ruff]
+line-length = 100
+target-version = "py311"
+
+[tool.ruff.lint]
+select = ["E", "F", "I", "N", "UP", "B", "S", "A", "C4", "RET", "SIM"]
+ignore = [
+    "S101", # asserts are fine in tests and as internal invariants
+]
+
+[tool.ruff.lint.per-file-ignores]
+"tests/*" = ["S", "E501"]
+# S105 flags the enum members named PASS as hardcoded passwords. They are
+# canary verdicts.
+"goldenpath/canary/judge.py" = ["S105"]
+"services/paved-road-demo/app.py" = ["S311"] # simulated latency, not cryptography
+"goldenpath/canary/metrics.py" = ["S310"]    # fixed http://127.0.0.1 targets
+"goldenpath/router.py" = ["S310"]
+"goldenpath/executors/process.py" = ["S310"]
+"goldenpath/orchestrator.py" = ["S310"]

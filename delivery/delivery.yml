@@ -1,0 +1,133 @@
+### The delivery config: the entire golden path, declared.
+#
+# Modelled on Spinnaker Managed Delivery's `spinnaker.yml`. Nothing here
+# describes *how* to deploy. It states what the application requires, and the
+# orchestrator works out the steps -- which is the whole point of a paved road.
+# A team adopting this path writes this file and nothing else.
+
+apiVersion: goldenpath/v1
+application: paved-road-demo
+owner: platform-engineering
+
+artifacts:
+  - name: paved-road-demo
+    type: process
+    entrypoint: services/paved-road-demo/app.py
+    # Versions are immutable and content-addressed by commit. There is no
+    # "latest" and no rebuild-on-deploy: the artifact promoted to prod is the
+    # identical artifact that passed test.
+    versionStrategy: git-sha
+
+environments:
+  # ---------------------------------------------------------------- test ----
+  - name: test
+    description: First stop. Proves the artifact starts and serves traffic.
+    constraints: []
+    strategy:
+      type: highlander # Replace outright; no traffic to protect here.
+    verification:
+      - type: smoke
+        endpoint: /health
+        expectStatus: 200
+        timeoutSeconds: 20
+
+  # ------------------------------------------------------------- staging ----
+  - name: staging
+    description: Production-shaped. Full canary analysis, no human in the loop.
+    constraints:
+      - type: depends-on
+        environment: test
+    strategy:
+      type: red-black
+      rollbackWindowSeconds: 5
+    verification:
+      - type: smoke
+        endpoint: /health
+        expectStatus: 200
+        timeoutSeconds: 20
+      - type: canary
+        # A shorter run than prod: staging is a filter, not the final gate.
+        windows: 24
+        requestsPerWindow: 16
+        concurrency: 8
+        passThreshold: 95
+        marginalThreshold: 75
+        metrics:
+          - name: error_rate_pct
+            direction: increase
+            weight: 5
+            critical: true
+            tolerance: 0.20
+            minSamples: 20
+          - name: request_latency_ms
+            direction: increase
+            weight: 3
+            tolerance: 0.25
+            minSamples: 100
+          - name: throughput_rps
+            direction: decrease
+            weight: 2
+            tolerance: 0.30
+            minSamples: 20
+          - name: cpu_saturation_pct
+            direction: increase
+            weight: 1
+            tolerance: 0.35
+            minSamples: 20
+
+  # ---------------------------------------------------------------- prod ----
+  - name: prod
+    description: Real traffic. Every guardrail on.
+    constraints:
+      - type: depends-on
+        environment: staging
+
+      # Netflix does not ship to prod on a Friday afternoon, and neither does
+      # this. Set `enforced: false` in CI so demonstration runs are not held
+      # hostage by the clock; the evaluation still runs and is still reported.
+      - type: allowed-times
+        days: [monday, tuesday, wednesday, thursday]
+        hoursUTC: "13-21"
+        enforced: false
+
+      # Judgment is automated. A human is consulted only when the statistics
+      # are genuinely ambiguous -- never as routine ceremony.
+      - type: manual-judgment
+        onlyWhen: canary-marginal
+
+    strategy:
+      type: red-black
+      rollbackWindowSeconds: 10
+    verification:
+      - type: smoke
+        endpoint: /health
+        expectStatus: 200
+        timeoutSeconds: 20
+      - type: canary
+        windows: 30
+        requestsPerWindow: 20
+        concurrency: 8
+        passThreshold: 95
+        marginalThreshold: 75
+        metrics:
+          - name: error_rate_pct
+            direction: increase
+            weight: 5
+            critical: true
+            tolerance: 0.20
+            minSamples: 25
+          - name: request_latency_ms
+            direction: increase
+            weight: 3
+            tolerance: 0.25
+            minSamples: 150
+          - name: throughput_rps
+            direction: decrease
+            weight: 2
+            tolerance: 0.30
+            minSamples: 25
+          - name: cpu_saturation_pct
+            direction: increase
+            weight: 1
+            tolerance: 0.35
+            minSamples: 25

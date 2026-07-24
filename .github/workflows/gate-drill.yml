@@ -1,0 +1,93 @@
+name: Gate Drill
+
+# A deployment gate nobody tests is a deployment gate nobody should trust.
+#
+# This workflow deliberately ships broken builds and asserts the pipeline
+# *rejects* them. It is inverted: if a build with a 6% error rate is promoted
+# to production, this job fails. The green check means the safety net holds.
+#
+# Runs weekly because gates rot quietly -- a threshold gets loosened to unblock
+# a release, and nobody notices it was never tightened again.
+
+on:
+  schedule:
+    - cron: "17 6 * * 1" # Mondays, 06:17 UTC
+  workflow_dispatch:
+  pull_request:
+    paths:
+      - "goldenpath/**"
+      - "delivery/**"
+      - ".github/workflows/gate-drill.yml"
+
+permissions:
+  contents: read
+
+jobs:
+  drill:
+    name: ${{ matrix.name }}
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - name: Error-rate regression must be rejected
+            error_rate: "0.06"
+            latency_ms: "18"
+            expected_exit: 1
+          - name: Latency regression must be rejected
+            error_rate: "0.002"
+            latency_ms: "110"
+            expected_exit: 1
+          - name: Healthy build must still be promoted
+            # The control. Without it, a gate that rejects *everything* would
+            # also pass this drill -- and a gate that blocks every release is
+            # just as broken as one that blocks none.
+            error_rate: "0.002"
+            latency_ms: "18"
+            expected_exit: 0
+
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+      - run: pip install -e .
+
+      - name: Deploy the drill build
+        id: drill
+        run: |
+          set +e
+          python -m goldenpath.cli deploy \
+            --candidate-version "drill-${{ github.run_number }}" \
+            --baseline-version "current-production" \
+            --candidate-env "ERROR_RATE=${{ matrix.error_rate }}" \
+            --candidate-env "LATENCY_MS=${{ matrix.latency_ms }}" \
+            --baseline-env "ERROR_RATE=0.002" \
+            --baseline-env "LATENCY_MS=18" \
+            --json-out artifacts/drill.json \
+            --markdown-out artifacts/drill.md
+          echo "exit_code=$?" >> "$GITHUB_OUTPUT"
+
+      - name: Assert the gate behaved as designed
+        run: |
+          actual="${{ steps.drill.outputs.exit_code }}"
+          expected="${{ matrix.expected_exit }}"
+          if [ "$actual" = "$expected" ]; then
+            echo "::notice title=Gate verified::${{ matrix.name }} (exit $actual, as expected)"
+            exit 0
+          fi
+          if [ "$expected" = "1" ]; then
+            echo "::error title=GATE FAILURE::A build that should have been rejected was not (exit $actual). The canary is not protecting production."
+          else
+            echo "::error title=GATE TOO STRICT::A healthy build was blocked (exit $actual). A gate that blocks every release will be switched off."
+          fi
+          exit 1
+
+      - name: Publish the drill record
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: gate-drill-${{ github.run_number }}-${{ strategy.job-index }}
+          path: artifacts/
+          retention-days: 30

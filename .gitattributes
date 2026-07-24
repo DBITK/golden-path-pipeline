@@ -1,0 +1,8 @@
+# Normalise to LF in the repository. The workflows run on Linux runners, where
+# a CRLF line ending in a shell step is a syntax error that only reproduces for
+# contributors on Windows.
+* text=auto eol=lf
+
+*.png binary
+*.jpg binary
+*.ico binary

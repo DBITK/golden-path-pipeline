@@ -1,0 +1,271 @@
+# GENERATED FILE -- DO NOT EDIT.
+#
+# Compiled from delivery.yml
+# by `goldenpath export-argo`. Edit the delivery config and regenerate.
+#
+# CI fails if this file drifts from the delivery config, so the two can
+# never quietly disagree about what the deployment gates are.
+#
+# Caveat: Argo Rollouts has no weighted aggregate score. Metric weights
+# are preserved as annotations only, and the generated analysis is
+# stricter than the weighted judge. See goldenpath/exporters/argo_rollouts.py.
+
+apiVersion: argoproj.io/v1alpha1
+kind: Rollout
+metadata:
+  name: paved-road-demo-test
+  annotations:
+    goldenpath.io/environment: test
+    goldenpath.io/strategy: highlander
+    goldenpath.io/owner: platform-engineering
+spec:
+  replicas: 4
+  revisionHistoryLimit: 3
+  selector:
+    matchLabels:
+      app: paved-road-demo
+      environment: test
+  template:
+    metadata:
+      labels:
+        app: paved-road-demo
+        environment: test
+    spec:
+      containers:
+      - name: paved-road-demo
+        image: ghcr.io/OWNER/paved-road-demo:REPLACED_BY_CI
+        ports:
+        - containerPort: 8080
+        readinessProbe:
+          httpGet:
+            path: /health
+            port: 8080
+          initialDelaySeconds: 2
+          periodSeconds: 5
+        resources:
+          requests:
+            cpu: 100m
+            memory: 128Mi
+          limits:
+            cpu: 500m
+            memory: 256Mi
+  strategy:
+    blueGreen:
+      activeService: paved-road-demo-test-active
+      previewService: paved-road-demo-test-preview
+      scaleDownDelaySeconds: 30
+      autoPromotionEnabled: true
+---
+apiVersion: argoproj.io/v1alpha1
+kind: AnalysisTemplate
+metadata:
+  name: paved-road-demo-staging-canary
+  annotations:
+    goldenpath.io/generated-from: delivery.yml
+    goldenpath.io/pass-threshold: '95.0'
+    goldenpath.io/marginal-threshold: '75.0'
+    goldenpath.io/metric-weights: error_rate_pct=5, request_latency_ms=3, throughput_rps=2, cpu_saturation_pct=1
+spec:
+  args:
+  - name: canary-service
+  - name: baseline-service
+  metrics:
+  - name: error-rate-pct
+    interval: 30s
+    count: 24
+    failureLimit: 0
+    successCondition: result[0] <= result[1] * 1.20
+    provider:
+      prometheus:
+        address: http://prometheus.monitoring.svc.cluster.local:9090
+        query: "100 * sum(rate(http_requests_total{job=\"{{args.canary-service}}\",status=~\"5..\"}[2m]))\n\
+          \  / sum(rate(http_requests_total{job=\"{{args.canary-service}}\"}[2m]))"
+  - name: request-latency-ms
+    interval: 30s
+    count: 24
+    failureLimit: 1
+    successCondition: result[0] <= result[1] * 1.25
+    provider:
+      prometheus:
+        address: http://prometheus.monitoring.svc.cluster.local:9090
+        query: "1000 * histogram_quantile(0.95,\n  sum(rate(http_request_duration_seconds_bucket{job=\"\
+          {{args.canary-service}}\"}[2m])) by (le))"
+  - name: throughput-rps
+    interval: 30s
+    count: 24
+    failureLimit: 1
+    successCondition: result[0] >= result[1] / 1.30
+    provider:
+      prometheus:
+        address: http://prometheus.monitoring.svc.cluster.local:9090
+        query: sum(rate(http_requests_total{job="{{args.canary-service}}"}[2m]))
+  - name: cpu-saturation-pct
+    interval: 30s
+    count: 24
+    failureLimit: 1
+    successCondition: result[0] <= result[1] * 1.35
+    provider:
+      prometheus:
+        address: http://prometheus.monitoring.svc.cluster.local:9090
+        query: 100 * avg(rate(container_cpu_usage_seconds_total{pod=~"{{args.canary-service}}-.*"}[2m]))
+---
+apiVersion: argoproj.io/v1alpha1
+kind: Rollout
+metadata:
+  name: paved-road-demo-staging
+  annotations:
+    goldenpath.io/environment: staging
+    goldenpath.io/strategy: red-black
+    goldenpath.io/owner: platform-engineering
+spec:
+  replicas: 4
+  revisionHistoryLimit: 3
+  selector:
+    matchLabels:
+      app: paved-road-demo
+      environment: staging
+  template:
+    metadata:
+      labels:
+        app: paved-road-demo
+        environment: staging
+    spec:
+      containers:
+      - name: paved-road-demo
+        image: ghcr.io/OWNER/paved-road-demo:REPLACED_BY_CI
+        ports:
+        - containerPort: 8080
+        readinessProbe:
+          httpGet:
+            path: /health
+            port: 8080
+          initialDelaySeconds: 2
+          periodSeconds: 5
+        resources:
+          requests:
+            cpu: 100m
+            memory: 128Mi
+          limits:
+            cpu: 500m
+            memory: 256Mi
+  strategy:
+    blueGreen:
+      activeService: paved-road-demo-staging-active
+      previewService: paved-road-demo-staging-preview
+      scaleDownDelaySeconds: 30
+      autoPromotionEnabled: true
+      prePromotionAnalysis:
+        templates:
+        - templateName: paved-road-demo-staging-canary
+        args:
+        - name: canary-service
+          value: paved-road-demo-staging-preview
+        - name: baseline-service
+          value: paved-road-demo-staging-active
+---
+apiVersion: argoproj.io/v1alpha1
+kind: AnalysisTemplate
+metadata:
+  name: paved-road-demo-prod-canary
+  annotations:
+    goldenpath.io/generated-from: delivery.yml
+    goldenpath.io/pass-threshold: '95.0'
+    goldenpath.io/marginal-threshold: '75.0'
+    goldenpath.io/metric-weights: error_rate_pct=5, request_latency_ms=3, throughput_rps=2, cpu_saturation_pct=1
+spec:
+  args:
+  - name: canary-service
+  - name: baseline-service
+  metrics:
+  - name: error-rate-pct
+    interval: 30s
+    count: 30
+    failureLimit: 0
+    successCondition: result[0] <= result[1] * 1.20
+    provider:
+      prometheus:
+        address: http://prometheus.monitoring.svc.cluster.local:9090
+        query: "100 * sum(rate(http_requests_total{job=\"{{args.canary-service}}\",status=~\"5..\"}[2m]))\n\
+          \  / sum(rate(http_requests_total{job=\"{{args.canary-service}}\"}[2m]))"
+  - name: request-latency-ms
+    interval: 30s
+    count: 30
+    failureLimit: 1
+    successCondition: result[0] <= result[1] * 1.25
+    provider:
+      prometheus:
+        address: http://prometheus.monitoring.svc.cluster.local:9090
+        query: "1000 * histogram_quantile(0.95,\n  sum(rate(http_request_duration_seconds_bucket{job=\"\
+          {{args.canary-service}}\"}[2m])) by (le))"
+  - name: throughput-rps
+    interval: 30s
+    count: 30
+    failureLimit: 1
+    successCondition: result[0] >= result[1] / 1.30
+    provider:
+      prometheus:
+        address: http://prometheus.monitoring.svc.cluster.local:9090
+        query: sum(rate(http_requests_total{job="{{args.canary-service}}"}[2m]))
+  - name: cpu-saturation-pct
+    interval: 30s
+    count: 30
+    failureLimit: 1
+    successCondition: result[0] <= result[1] * 1.35
+    provider:
+      prometheus:
+        address: http://prometheus.monitoring.svc.cluster.local:9090
+        query: 100 * avg(rate(container_cpu_usage_seconds_total{pod=~"{{args.canary-service}}-.*"}[2m]))
+---
+apiVersion: argoproj.io/v1alpha1
+kind: Rollout
+metadata:
+  name: paved-road-demo-prod
+  annotations:
+    goldenpath.io/environment: prod
+    goldenpath.io/strategy: red-black
+    goldenpath.io/owner: platform-engineering
+spec:
+  replicas: 4
+  revisionHistoryLimit: 3
+  selector:
+    matchLabels:
+      app: paved-road-demo
+      environment: prod
+  template:
+    metadata:
+      labels:
+        app: paved-road-demo
+        environment: prod
+    spec:
+      containers:
+      - name: paved-road-demo
+        image: ghcr.io/OWNER/paved-road-demo:REPLACED_BY_CI
+        ports:
+        - containerPort: 8080
+        readinessProbe:
+          httpGet:
+            path: /health
+            port: 8080
+          initialDelaySeconds: 2
+          periodSeconds: 5
+        resources:
+          requests:
+            cpu: 100m
+            memory: 128Mi
+          limits:
+            cpu: 500m
+            memory: 256Mi
+  strategy:
+    blueGreen:
+      activeService: paved-road-demo-prod-active
+      previewService: paved-road-demo-prod-preview
+      scaleDownDelaySeconds: 30
+      autoPromotionEnabled: false
+      prePromotionAnalysis:
+        templates:
+        - templateName: paved-road-demo-prod-canary
+        args:
+        - name: canary-service
+          value: paved-road-demo-prod-preview
+        - name: baseline-service
+          value: paved-road-demo-prod-active

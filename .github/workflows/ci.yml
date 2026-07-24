@@ -1,0 +1,70 @@
+name: CI
+
+# Everything that must be true before an artifact is allowed to exist.
+# Deployment gates are only as trustworthy as the code implementing them, so
+# the judge's own test suite runs here on every change.
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: ci-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  lint:
+    name: Lint
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+      - run: pip install ruff
+      - name: ruff check
+        run: ruff check .
+      - name: ruff format --check
+        run: ruff format --check .
+
+  test:
+    name: Test (Python ${{ matrix.python-version }})
+    runs-on: ubuntu-latest
+    strategy:
+      fail-fast: false
+      matrix:
+        python-version: ["3.11", "3.12", "3.13"]
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: ${{ matrix.python-version }}
+      - uses: actions/setup-node@v4
+        with:
+          # The parity suite runs the browser judge under Node and compares it
+          # against the Python judge.
+          node-version: "20"
+      - run: pip install -e ".[dev]"
+      - name: Run the suite
+        run: pytest -v
+
+  config-drift:
+    name: Delivery config integrity
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+      - run: pip install -e .
+      - name: Validate the delivery config
+        run: python -m goldenpath.cli validate
+      - name: Generated Argo Rollouts manifests are in sync
+        # The delivery config and the manifests it compiles to must never
+        # quietly disagree about what the deployment gates are.
+        run: python -m goldenpath.cli export-argo --check
