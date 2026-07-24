@@ -479,21 +479,32 @@
           });
         });
 
-        // Derive the repository links from the Pages URL so the page works on
-        // any fork without editing.
+        // Resolve the repository links. A fork served from <owner>.github.io
+        // gets its own links derived from the URL; anything else -- including a
+        // custom domain, where the hostname says nothing about the owner --
+        // falls back to the canonical repository rather than degrading to
+        // unlinked prose.
         (function () {
+          var CANONICAL = { owner: 'DBITK', repo: 'golden-path-pipeline' };
           var host = location.hostname;
-          var owner = host.endsWith('.github.io') ? host.split('.')[0] : null;
-          var repo = location.pathname.split('/').filter(Boolean)[0];
-          var el = document.getElementById('repoLinks');
-          if (owner && repo) {
-            var base = 'https://github.com/' + owner + '/' + repo;
-            el.innerHTML = '<a href="' + base + '">Source</a> · ' +
-              '<a href="' + base + '/actions">Pipeline runs</a> · ' +
-              '<a href="' + base + '/blob/main/delivery/delivery.yml">delivery.yml</a>';
-          } else {
-            el.textContent = 'Source, pipeline runs, and delivery.yml are in the repository.';
+          var owner = null;
+          var repo = null;
+
+          if (host.endsWith('.github.io')) {
+            owner = host.split('.')[0];
+            repo = location.pathname.split('/').filter(Boolean)[0];
           }
+          if (!owner || !repo) {
+            owner = CANONICAL.owner;
+            repo = CANONICAL.repo;
+          }
+
+          var base = 'https://github.com/' + owner + '/' + repo;
+          document.getElementById('repoLinks').innerHTML =
+            '<a href="' + base + '">Source</a> · ' +
+            '<a href="' + base + '/actions">Pipeline runs</a> · ' +
+            '<a href="' + base + '/blob/main/delivery/delivery.yml">delivery.yml</a> · ' +
+            '<a href="https://derekbartlett.com/">derekbartlett.com</a>';
         })();
 
         render();
